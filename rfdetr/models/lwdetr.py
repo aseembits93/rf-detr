@@ -545,7 +545,8 @@ class PostProcess(nn.Module):
                           For evaluation, this must be the original image size (before any data augmentation)
                           For visualization, this should be the image size after data augment, but before padding
         """
-        out_logits, out_bbox = outputs['pred_logits'], outputs['pred_boxes']
+        out_logits = outputs['pred_logits']
+        out_bbox = outputs['pred_boxes']
 
         assert len(out_logits) == len(target_sizes)
         assert target_sizes.shape[1] == 2
@@ -553,10 +554,12 @@ class PostProcess(nn.Module):
         prob = out_logits.sigmoid()
         topk_values, topk_indexes = torch.topk(prob.view(out_logits.shape[0], -1), self.num_select, dim=1)
         scores = topk_values
-        topk_boxes = topk_indexes // out_logits.shape[2]
-        labels = topk_indexes % out_logits.shape[2]
+        num_classes = out_logits.shape[2]
+        topk_boxes = topk_indexes // num_classes
+        labels = topk_indexes % num_classes
+
         boxes = box_ops.box_cxcywh_to_xyxy(out_bbox)
-        boxes = torch.gather(boxes, 1, topk_boxes.unsqueeze(-1).repeat(1,1,4))
+        boxes = torch.gather(boxes, 1, topk_boxes.unsqueeze(-1).expand(-1, -1, 4))
 
         # and from relative [0, 1] to absolute [0, height] coordinates
         img_h, img_w = target_sizes.unbind(1)

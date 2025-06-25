@@ -19,10 +19,17 @@ from torchvision.ops.boxes import box_area
 
 
 def box_cxcywh_to_xyxy(x):
+    # Optimized: Do clamp only once for each w/h, build output with vectorized ops.
     x_c, y_c, w, h = x.unbind(-1)
-    b = [(x_c - 0.5 * w.clamp(min=0.0)), (y_c - 0.5 * h.clamp(min=0.0)),
-         (x_c + 0.5 * w.clamp(min=0.0)), (y_c + 0.5 * h.clamp(min=0.0))]
-    return torch.stack(b, dim=-1)
+    w = w.clamp(min=0.0)
+    h = h.clamp(min=0.0)
+    half_w = 0.5 * w
+    half_h = 0.5 * h
+    x1 = x_c - half_w
+    y1 = y_c - half_h
+    x2 = x_c + half_w
+    y2 = y_c + half_h
+    return torch.stack((x1, y1, x2, y2), dim=-1)
 
 
 def box_xyxy_to_cxcywh(x):
