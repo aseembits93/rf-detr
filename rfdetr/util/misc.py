@@ -294,10 +294,17 @@ def collate_fn(batch):
 
 def _max_by_axis(the_list):
     # type: (List[List[int]]) -> List[int]
-    maxes = the_list[0]
+    # Optimized: avoid repeated indexing and unnecessary mutation
+    if not the_list:
+        return []
+    n_cols = len(the_list[0])
+    # Create copy to avoid mutating the input list.
+    maxes = the_list[0][:]
+
     for sublist in the_list[1:]:
-        for index, item in enumerate(sublist):
-            maxes[index] = max(maxes[index], item)
+        for idx in range(n_cols):
+            if sublist[idx] > maxes[idx]:
+                maxes[idx] = sublist[idx]
     return maxes
 
 
