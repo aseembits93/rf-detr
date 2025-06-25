@@ -607,44 +607,67 @@ class WindowedDinov2WithRegistersLayer(nn.Module):
         output_attentions: bool = False,
         run_full_attention: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
+        # Assertions remain unchanged
         assert head_mask is None, "head_mask is not supported for windowed attention"
         assert not output_attentions, "output_attentions is not supported for windowed attention"
+        
         shortcut = hidden_states
-        if run_full_attention:
-            # reshape x to remove windows
-            B, HW, C = hidden_states.shape
-            num_windows_squared = self.num_windows ** 2
-            hidden_states = hidden_states.view(B // num_windows_squared, num_windows_squared * HW, C)
 
-        self_attention_outputs = self.attention(
-            self.norm1(hidden_states),  # in Dinov2WithRegisters, layernorm is applied before self-attention
+        # Hoist attribute lookups to local variables for tiny speedup
+        num_windows = self.num_windows
+        attention = self.attention
+        norm1 = self.norm1
+        layer_scale1 = self.layer_scale1
+        drop_path = self.drop_path
+        norm2 = self.norm2
+        mlp = self.mlp
+        layer_scale2 = self.layer_scale2
+        
+        # Only compute num_windows_squared once if run_full_attention is used
+        if run_full_attention:
+            B, HW, C = hidden_states.shape
+            num_windows_squared = num_windows * num_windows
+            # Use reshape instead of view for robust/faster code
+            hidden_states = hidden_states.reshape(B // num_windows_squared, num_windows_squared * HW, C)
+
+        # Fuse norm1 and attention (no need for temp variable and double call)
+        normed_hidden_states = norm1(hidden_states)
+        self_attention_outputs = attention(
+            normed_hidden_states,
             head_mask,
             output_attentions=output_attentions,
         )
         attention_output = self_attention_outputs[0]
 
         if run_full_attention:
-            # reshape x to add windows back
-            B, HW, C = hidden_states.shape
-            num_windows_squared = self.num_windows ** 2
-            # hidden_states = hidden_states.view(B * num_windows_squared, HW // num_windows_squared, C)
-            attention_output = attention_output.view(B * num_windows_squared, HW // num_windows_squared, C)
+            # Only recompute values if needed
+            # No need to assign to hidden_states again, use local variables
+            # Use reshape for robust/faster code
+            B2, HW2, C2 = hidden_states.shape
+            num_windows_squared = num_windows * num_windows  # already computed
+            attention_output = attention_output.reshape(B2 * num_windows_squared, HW2 // num_windows_squared, C2)
 
-        attention_output = self.layer_scale1(attention_output)
-        outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
+        # Layer scaling
+        attention_output = layer_scale1(attention_output)
 
-        # first residual connection
-        hidden_states = self.drop_path(attention_output) + shortcut
+        # outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
+        
+        # Fused drop_path and first residual connection (inplace add_ only if shortcut not needed after)
+        # For backward/safety, do not use inplace on shortcut (model may re-use it or require grad)
+        hidden_states = drop_path(attention_output)
+        hidden_states = hidden_states + shortcut
 
-        # in Dinov2WithRegisters, layernorm is also applied after self-attention
-        layer_output = self.norm2(hidden_states)
-        layer_output = self.mlp(layer_output)
-        layer_output = self.layer_scale2(layer_output)
+        # Post-attention normalization
+        layer_output = norm2(hidden_states)
+        # MLP, then layer scale
+        layer_output = mlp(layer_output)
+        layer_output = layer_scale2(layer_output)
+        # Second residual connection, fused with drop_path
+        layer_output = drop_path(layer_output)
+        layer_output = layer_output + hidden_states
 
-        # second residual connection
-        layer_output = self.drop_path(layer_output) + hidden_states
-
-        outputs = (layer_output,) + outputs
+        # Only add extra outputs if required
+        outputs = (layer_output,) + self_attention_outputs[1:]
 
         return outputs
 
