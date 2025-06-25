@@ -294,11 +294,8 @@ def collate_fn(batch):
 
 def _max_by_axis(the_list):
     # type: (List[List[int]]) -> List[int]
-    maxes = the_list[0]
-    for sublist in the_list[1:]:
-        for index, item in enumerate(sublist):
-            maxes[index] = max(maxes[index], item)
-    return maxes
+    # Optimize: use zip and built-in max in a loop.
+    return [max(items) for items in zip(*the_list)]
 
 
 class NestedTensor(object):
@@ -332,18 +329,23 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
             # call _onnx_nested_tensor_from_tensor_list() instead
             return _onnx_nested_tensor_from_tensor_list(tensor_list)
 
-        # TODO make it support different-sized images
+        # Use list comprehensions, vectorized operations for max_size calculation
         max_size = _max_by_axis([list(img.shape) for img in tensor_list])
-        # min_size = tuple(min(s) for s in zip(*[img.shape for img in tensor_list]))
+
+        # Use stackable batch allocation
         batch_shape = [len(tensor_list)] + max_size
         b, c, h, w = batch_shape
         dtype = tensor_list[0].dtype
         device = tensor_list[0].device
+
         tensor = torch.zeros(batch_shape, dtype=dtype, device=device)
         mask = torch.ones((b, h, w), dtype=torch.bool, device=device)
-        for img, pad_img, m in zip(tensor_list, tensor, mask):
-            pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
-            m[: img.shape[1], :img.shape[2]] = False
+
+        # Optimization: enumerate and index assign, avoid zip (zip instantiates tuples repeatedly)
+        for i, img in enumerate(tensor_list):
+            ch, hi, wi = img.shape
+            tensor[i, :ch, :hi, :wi].copy_(img)
+            mask[i, :hi, :wi] = False
     else:
         raise ValueError('not supported')
     return NestedTensor(tensor, mask)
@@ -353,30 +355,33 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
 # nested_tensor_from_tensor_list() that is supported by ONNX tracing.
 @torch.jit.unused
 def _onnx_nested_tensor_from_tensor_list(tensor_list: List[Tensor]) -> NestedTensor:
-    max_size = []
-    for i in range(tensor_list[0].dim()):
-        max_size_i = torch.max(torch.stack([img.shape[i] for img in tensor_list]).to(torch.float32)).to(torch.int64)
-        max_size.append(max_size_i)
+    # Optimization: compute max_size directly using list comprehension and built-in max
+    max_size = [max([img.shape[i] for img in tensor_list]) for i in range(tensor_list[0].dim())]
     max_size = tuple(max_size)
 
-    # work around for
-    # pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
-    # m[: img.shape[1], :img.shape[2]] = False
-    # which is not yet supported in onnx
     padded_imgs = []
     padded_masks = []
     for img in tensor_list:
-        padding = [(s1 - s2) for s1, s2 in zip(max_size, tuple(img.shape))]
-        padded_img = torch.nn.functional.pad(img, (0, padding[2], 0, padding[1], 0, padding[0]))
+        # Calculate per-dimension padding in one readable step
+        padding = [s1 - s2 for s1, s2 in zip(max_size, img.shape)]
+        # torch.nn.functional.pad expects pads in reverse order and as (left, right)
+        # For (C, H, W), pad is (W1_left, W1_right, H1_left, H1_right, C1_left, C1_right)
+        padded_img = torch.nn.functional.pad(
+            img,
+            (0, padding[2], 0, padding[1], 0, padding[0])
+        )
         padded_imgs.append(padded_img)
 
+        # mask is (H, W): 1 for pad, 0 for valid
         m = torch.zeros_like(img[0], dtype=torch.int, device=img.device)
-        padded_mask = torch.nn.functional.pad(m, (0, padding[2], 0, padding[1]), "constant", 1)
-        padded_masks.append(padded_mask.to(torch.bool))
+        padded_mask = torch.nn.functional.pad(
+            m,
+            (0, padding[2], 0, padding[1]), "constant", 1
+        )
+        padded_masks.append(padded_mask.bool())
 
     tensor = torch.stack(padded_imgs)
     mask = torch.stack(padded_masks)
-
     return NestedTensor(tensor, mask=mask)
 
 
