@@ -218,7 +218,7 @@ class WindowedDinov2WithRegistersEmbeddings(nn.Module):
     Construct the CLS token, mask token, register tokens, position and patch embeddings.
     """
 
-    def __init__(self, config: WindowedDinov2WithRegistersConfig) -> None:
+    def __init__(self, config: 'WindowedDinov2WithRegistersConfig') -> None:
         super().__init__()
 
         self.cls_token = nn.Parameter(torch.randn(1, 1, config.hidden_size))
@@ -245,7 +245,8 @@ class WindowedDinov2WithRegistersEmbeddings(nn.Module):
         num_positions = self.position_embeddings.shape[1] - 1
 
         # Skip interpolation for matching dimensions (unless tracing)
-        if not torch.jit.is_tracing() and num_patches == num_positions and height == width:
+        is_tracing = torch.jit.is_tracing()
+        if not is_tracing and num_patches == num_positions and height == width:
             return self.position_embeddings
 
         # Handle class token and patch embeddings separately
@@ -253,37 +254,44 @@ class WindowedDinov2WithRegistersEmbeddings(nn.Module):
         patch_pos_embed = self.position_embeddings[:, 1:]
         dim = embeddings.shape[-1]
 
-        # Calculate new dimensions
-        height = height // self.config.patch_size
-        width = width // self.config.patch_size
+        # Calculate patch grid size
+        patch_h = height // self.config.patch_size
+        patch_w = width // self.config.patch_size
 
         # Reshape for interpolation
-        sqrt_num_positions = torch_int(num_positions**0.5)
-        patch_pos_embed = patch_pos_embed.reshape(1, sqrt_num_positions, sqrt_num_positions, dim)
-        patch_pos_embed = patch_pos_embed.permute(0, 3, 1, 2)
+        sqrt_num_positions = int(num_positions**0.5)
+        patch_pos_embed = patch_pos_embed.reshape(1, sqrt_num_positions, sqrt_num_positions, dim).permute(0, 3, 1, 2)
 
-        # Store original dtype for restoration after interpolation
-        target_dtype = patch_pos_embed.dtype
+        input_dtype = patch_pos_embed.dtype
 
-        # Interpolate at float32 precision
-        patch_pos_embed = nn.functional.interpolate(
-            patch_pos_embed.to(dtype=torch.float32),
-            size=(torch_int(height), torch_int(width)),  # Explicit size instead of scale_factor
+        # Interpolate (bicubic) at float32 precision, then restore dtype
+        # This is the most expensive operation, so minimize dtype/device ops
+        orig_device = patch_pos_embed.device
+        # .contiguous() ensures correct memory layout before permute/interp
+        patch_pos_embed_f32 = patch_pos_embed.to(dtype=torch.float32, device=orig_device, non_blocking=True) if patch_pos_embed.dtype != torch.float32 else patch_pos_embed
+
+        interpolated = nn.functional.interpolate(
+            patch_pos_embed_f32,
+            size=(patch_h, patch_w),
             mode="bicubic",
             align_corners=False,
             antialias=True,
-        ).to(dtype=target_dtype)
+        )
 
-        # Validate output dimensions if not tracing
-        if not torch.jit.is_tracing():
-            if int(height) != patch_pos_embed.shape[-2] or int(width) != patch_pos_embed.shape[-1]:
+        if patch_pos_embed_f32.dtype != input_dtype:
+            interpolated = interpolated.to(dtype=input_dtype, device=orig_device, non_blocking=True)
+
+        # Validate result if not tracing
+        if not is_tracing:
+            if (patch_h != interpolated.shape[-2]) or (patch_w != interpolated.shape[-1]):
                 raise ValueError("Width or height does not match with the interpolated position embeddings")
 
-        # Reshape back to original format
-        patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
+        # Reshape and permute back to (1, patch_h * patch_w, dim)
+        patch_pos_embed_final = interpolated.permute(0, 2, 3, 1).reshape(1, -1, dim)
 
-        # Combine class and patch embeddings
-        return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
+        # Efficient cat: use reshape for class token, avoid unsqueeze overhead
+        out = torch.cat((class_pos_embed.reshape(1, 1, dim), patch_pos_embed_final), dim=1)
+        return out
 
     def forward(self, pixel_values: torch.Tensor, bool_masked_pos: Optional[torch.Tensor] = None) -> torch.Tensor:
         batch_size, _, height, width = pixel_values.shape
