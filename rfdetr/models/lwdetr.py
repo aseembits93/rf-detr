@@ -65,7 +65,7 @@ class LWDETR(nn.Module):
         self.class_embed = nn.Linear(hidden_dim, num_classes)
         self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
 
-        query_dim=4
+        query_dim = 4
         self.refpoint_embed = nn.Embedding(num_queries * group_detr, query_dim)
         self.query_feat = nn.Embedding(num_queries * group_detr, hidden_dim)
         nn.init.constant_(self.refpoint_embed.weight.data, 0)
@@ -76,29 +76,33 @@ class LWDETR(nn.Module):
 
         # iter update
         self.lite_refpoint_refine = lite_refpoint_refine
+        decoder = self.transformer.decoder
         if not self.lite_refpoint_refine:
-            self.transformer.decoder.bbox_embed = self.bbox_embed
+            decoder.bbox_embed = self.bbox_embed
         else:
-            self.transformer.decoder.bbox_embed = None
+            decoder.bbox_embed = None
 
         self.bbox_reparam = bbox_reparam
 
         # init prior_prob setting for focal loss
         prior_prob = 0.01
         bias_value = -math.log((1 - prior_prob) / prior_prob)
-        self.class_embed.bias.data = torch.ones(num_classes) * bias_value
+        with torch.no_grad():
+            self.class_embed.bias.data.fill_(bias_value)
 
-        # init bbox_mebed
-        nn.init.constant_(self.bbox_embed.layers[-1].weight.data, 0)
-        nn.init.constant_(self.bbox_embed.layers[-1].bias.data, 0)
+        # init bbox_embed
+        with torch.no_grad():
+            final_linear = self.bbox_embed.layers[-1]
+            nn.init.constant_(final_linear.weight.data, 0)
+            nn.init.constant_(final_linear.bias.data, 0)
 
         # two_stage
         self.two_stage = two_stage
         if self.two_stage:
-            self.transformer.enc_out_bbox_embed = nn.ModuleList(
-                [copy.deepcopy(self.bbox_embed) for _ in range(group_detr)])
-            self.transformer.enc_out_class_embed = nn.ModuleList(
-                [copy.deepcopy(self.class_embed) for _ in range(group_detr)])
+            enc_out_bbox_embed = nn.ModuleList([copy.deepcopy(self.bbox_embed) for _ in range(group_detr)])
+            enc_out_class_embed = nn.ModuleList([copy.deepcopy(self.class_embed) for _ in range(group_detr)])
+            self.transformer.enc_out_bbox_embed = enc_out_bbox_embed
+            self.transformer.enc_out_class_embed = enc_out_class_embed
 
         self._export = False
 
@@ -214,11 +218,12 @@ class LWDETR(nn.Module):
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord):
-        # this is a workaround to make torchscript happy, as torchscript
-        # doesn't support dictionary with non-homogeneous values, such
-        # as a dict having both a Tensor and a list.
-        return [{'pred_logits': a, 'pred_boxes': b}
-                for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
+        # Optimized: avoids repeated slicing and builds list with index addressing for speed.
+        n = len(outputs_class) - 1
+        out = [None] * n
+        for i in range(n):
+            out[i] = {'pred_logits': outputs_class[i], 'pred_boxes': outputs_coord[i]}
+        return out
 
     def update_drop_path(self, drop_path_rate, vit_encoder_num_layers):
         """ """
