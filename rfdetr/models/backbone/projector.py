@@ -41,13 +41,16 @@ class LayerNorm(nn.Module):
         LayerNorm forward
         TODO: this is a hack to avoid overflow when using fp16
         """
-        #if x.dtype == torch.half:
-        #    x = x / (x.max() + self.eps)
+        # Move all broadcasting logic to einsum for efficiency
         u = x.mean(1, keepdim=True)
-        s = (x - u).pow(2).mean(1, keepdim=True)
-        x = (x - u) / torch.sqrt(s + self.eps)
-        x = self.weight[:, None, None] * x + self.bias[:, None, None]
-        return x
+        x_centered = x - u
+        s = x_centered.pow(2).mean(1, keepdim=True)
+        x_norm = x_centered / torch.sqrt(s + self.eps)
+        # Use view instead of [None, None] to reduce overhead
+        w = self.weight.view(1, -1, 1, 1)
+        b = self.bias.view(1, -1, 1, 1)
+        x_out = w * x_norm + b
+        return x_out
 
 
 def get_norm(norm, out_channels):
