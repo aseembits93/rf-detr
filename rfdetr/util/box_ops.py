@@ -19,10 +19,19 @@ from torchvision.ops.boxes import box_area
 
 
 def box_cxcywh_to_xyxy(x):
+    # Fast vectorized version to convert [cx,cy,w,h] box to [x0,y0,x1,y1]
+    # Clamp only once for w,h, and do direct arithmetics
     x_c, y_c, w, h = x.unbind(-1)
-    b = [(x_c - 0.5 * w.clamp(min=0.0)), (y_c - 0.5 * h.clamp(min=0.0)),
-         (x_c + 0.5 * w.clamp(min=0.0)), (y_c + 0.5 * h.clamp(min=0.0))]
-    return torch.stack(b, dim=-1)
+    ww = w.clamp_min(0.0)
+    hh = h.clamp_min(0.0)
+    half_ww = 0.5 * ww
+    half_hh = 0.5 * hh
+    x0 = x_c - half_ww
+    y0 = y_c - half_hh
+    x1 = x_c + half_ww
+    y1 = y_c + half_hh
+    # Use torch.stack with preallocated tensors for performance
+    return torch.stack((x0, y0, x1, y1), dim=-1)
 
 
 def box_xyxy_to_cxcywh(x):
