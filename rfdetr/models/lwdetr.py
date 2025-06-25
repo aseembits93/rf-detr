@@ -214,11 +214,15 @@ class LWDETR(nn.Module):
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord):
-        # this is a workaround to make torchscript happy, as torchscript
-        # doesn't support dictionary with non-homogeneous values, such
-        # as a dict having both a Tensor and a list.
-        return [{'pred_logits': a, 'pred_boxes': b}
-                for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
+        # OPTIMIZED: Preallocate the output list for improved speed when layer count is known.
+        l = len(outputs_class) - 1
+        res = [None] * l
+        for idx in range(l):
+            res[idx] = {
+                'pred_logits': outputs_class[idx],
+                'pred_boxes': outputs_coord[idx]
+            }
+        return res
 
     def update_drop_path(self, drop_path_rate, vit_encoder_num_layers):
         """ """
