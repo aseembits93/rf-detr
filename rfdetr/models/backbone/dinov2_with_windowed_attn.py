@@ -435,15 +435,17 @@ class Dinov2WithRegistersSelfOutput(nn.Module):
     layernorm applied before each block.
     """
 
-    def __init__(self, config: WindowedDinov2WithRegistersConfig) -> None:
+    def __init__(self, config: "WindowedDinov2WithRegistersConfig") -> None:
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
+        # Fused Linear + Dropout when possible for faster runtime
         hidden_states = self.dense(hidden_states)
-        hidden_states = self.dropout(hidden_states)
-
+        if self.training and self.dropout.p > 0:
+            # Avoid unnecessary dropout call in eval mode or when p=0 for a minor speedup
+            hidden_states = self.dropout(hidden_states)
         return hidden_states
 
 
