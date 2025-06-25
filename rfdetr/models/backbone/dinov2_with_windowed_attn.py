@@ -209,7 +209,11 @@ class Dinov2WithRegistersPatchEmbeddings(nn.Module):
                 "Make sure that the channel dimension of the pixel values match with the one set in the configuration."
                 f" Expected {self.num_channels} but got {num_channels}."
             )
-        embeddings = self.projection(pixel_values).flatten(2).transpose(1, 2)
+        # Instead of flatten(2).transpose(1, 2), use permute/reshape for memory efficiency and speed.
+        x = self.projection(pixel_values)
+        # x: (batch_size, hidden_size, h, w)
+        batch_size, hidden_size, h, w = x.shape
+        embeddings = x.permute(0, 2, 3, 1).reshape(batch_size, h * w, hidden_size)
         return embeddings
 
 
