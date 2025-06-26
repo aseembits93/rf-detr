@@ -65,7 +65,7 @@ class LWDETR(nn.Module):
         self.class_embed = nn.Linear(hidden_dim, num_classes)
         self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
 
-        query_dim=4
+        query_dim = 4
         self.refpoint_embed = nn.Embedding(num_queries * group_detr, query_dim)
         self.query_feat = nn.Embedding(num_queries * group_detr, hidden_dim)
         nn.init.constant_(self.refpoint_embed.weight.data, 0)
@@ -126,6 +126,7 @@ class LWDETR(nn.Module):
             if hasattr(m, "export") and isinstance(m.export, Callable) and hasattr(m, "_export") and not m._export:
                 m.export()
 
+    @torch.compile
     def forward(self, samples: NestedTensor, targets=None):
         """ The forward expects a NestedTensor, which consists of:
                - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
@@ -214,11 +215,12 @@ class LWDETR(nn.Module):
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord):
-        # this is a workaround to make torchscript happy, as torchscript
-        # doesn't support dictionary with non-homogeneous values, such
-        # as a dict having both a Tensor and a list.
-        return [{'pred_logits': a, 'pred_boxes': b}
-                for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
+        # optimized to avoid list slicing and zipped allocation
+        res = []
+        n = min(len(outputs_class), len(outputs_coord)) - 1
+        for i in range(n):
+            res.append({'pred_logits': outputs_class[i], 'pred_boxes': outputs_coord[i]})
+        return res
 
     def update_drop_path(self, drop_path_rate, vit_encoder_num_layers):
         """ """
@@ -536,6 +538,7 @@ class PostProcess(nn.Module):
         super().__init__()
         self.num_select = num_select
 
+    @torch.compile
     @torch.no_grad()
     def forward(self, outputs, target_sizes):
         """ Perform the computation
@@ -577,6 +580,7 @@ class MLP(nn.Module):
         h = [hidden_dim] * (num_layers - 1)
         self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
 
+    @torch.compile
     def forward(self, x):
         for i, layer in enumerate(self.layers):
             x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
