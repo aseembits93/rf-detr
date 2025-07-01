@@ -80,50 +80,71 @@ def gen_encoder_output_proposals(memory, memory_padding_mask, spatial_shapes, un
         - output_proposals: bs, \sum{hw}, 4
     """
     N_, S_, C_ = memory.shape
-    base_scale = 4.0
-    proposals = []
+    device = memory.device
+    dtype = torch.float32
+
+    num_levels = spatial_shapes.shape[0]
+    proposals_list = []
     _cur = 0
-    for lvl, (H_, W_) in enumerate(spatial_shapes):
+
+    for lvl in range(num_levels):
+        H_, W_ = spatial_shapes[lvl, 0].item(), spatial_shapes[lvl, 1].item()
+        len_l = H_ * W_
+        # Compute valid_H, valid_W
         if memory_padding_mask is not None:
-            mask_flatten_ = memory_padding_mask[:, _cur:(_cur + H_ * W_)].view(N_, H_, W_, 1)
-            valid_H = torch.sum(~mask_flatten_[:, :, 0, 0], 1)
-            valid_W = torch.sum(~mask_flatten_[:, 0, :, 0], 1)
+            mask_flatten_ = memory_padding_mask[:, _cur:(_cur + len_l)].view(N_, H_, W_)
+            mask_flatten_bool = ~mask_flatten_
+            valid_H = mask_flatten_bool[:, :, 0].sum(1)  # shape: [N_]
+            valid_W = mask_flatten_bool[:, 0, :].sum(1)  # shape: [N_]
         else:
-            valid_H = torch.tensor([H_ for _ in range(N_)], device=memory.device)
-            valid_W = torch.tensor([W_ for _ in range(N_)], device=memory.device)
+            valid_H = torch.full((N_,), H_, dtype=dtype, device=device)
+            valid_W = torch.full((N_,), W_, dtype=dtype, device=device)
 
-        grid_y, grid_x = torch.meshgrid(torch.linspace(0, H_ - 1, H_, dtype=torch.float32, device=memory.device),
-                                        torch.linspace(0, W_ - 1, W_, dtype=torch.float32, device=memory.device))
-        grid = torch.cat([grid_x.unsqueeze(-1), grid_y.unsqueeze(-1)], -1) # H_, W_, 2
+        # Construct the normalized grid for x/y
+        grid_y = torch.arange(H_, dtype=dtype, device=device).unsqueeze(1).expand(H_, W_)
+        grid_x = torch.arange(W_, dtype=dtype, device=device).unsqueeze(0).expand(H_, W_)
+        # Add 0.5 for center of each cell
+        grid = torch.stack((grid_x, grid_y), dim=2) + 0.5  # H_, W_, 2
 
-        scale = torch.cat([valid_W.unsqueeze(-1), valid_H.unsqueeze(-1)], 1).view(N_, 1, 1, 2)
-        grid = (grid.unsqueeze(0).expand(N_, -1, -1, -1) + 0.5) / scale
+        # Expand grid to N_ and normalize
+        grid = grid.unsqueeze(0).expand(N_, H_, W_, 2)
+        scale = torch.stack((valid_W, valid_H), dim=1).view(N_, 1, 1, 2).to(dtype)
+        norm_grid = grid / scale  # normalized [0, 1]
 
-        wh = torch.ones_like(grid) * 0.05 * (2.0 ** lvl)
+        # wh is a constant per level
+        wh_val = 0.05 * (2.0 ** lvl)
+        wh = torch.full_like(norm_grid, wh_val)
 
-        proposal = torch.cat((grid, wh), -1).view(N_, -1, 4)
-        proposals.append(proposal)
-        _cur += (H_ * W_)
+        proposal = torch.cat((norm_grid, wh), dim=-1).reshape(N_, -1, 4)
+        proposals_list.append(proposal)
+        _cur += len_l
 
-    output_proposals = torch.cat(proposals, 1)
+    output_proposals = torch.cat(proposals_list, dim=1)
+
+    # mask for valid proposals (0.01 < value < 0.99 for all coords)
     output_proposals_valid = ((output_proposals > 0.01) & (output_proposals < 0.99)).all(-1, keepdim=True)
 
+    # Avoid repeated type conversions (use dtype at the end)
     if unsigmoid:
-        output_proposals = torch.log(output_proposals / (1 - output_proposals)) # unsigmoid
+        unsigmoided = torch.log(output_proposals / (1 - output_proposals))
         if memory_padding_mask is not None:
-            output_proposals = output_proposals.masked_fill(memory_padding_mask.unsqueeze(-1), float('inf'))
-        output_proposals = output_proposals.masked_fill(~output_proposals_valid, float('inf'))
+            unsigmoided = unsigmoided.masked_fill(memory_padding_mask.unsqueeze(-1), float('inf'))
+        unsigmoided = unsigmoided.masked_fill(~output_proposals_valid, float('inf'))
+        output_proposals_result = unsigmoided
     else:
+        proposals_filled = output_proposals
         if memory_padding_mask is not None:
-            output_proposals = output_proposals.masked_fill(memory_padding_mask.unsqueeze(-1), float(0))
-        output_proposals = output_proposals.masked_fill(~output_proposals_valid, float(0))
+            proposals_filled = proposals_filled.masked_fill(memory_padding_mask.unsqueeze(-1), 0.0)
+        proposals_filled = proposals_filled.masked_fill(~output_proposals_valid, 0.0)
+        output_proposals_result = proposals_filled
 
+    # Fill memory with 0 where padding or not valid proposal
     output_memory = memory
     if memory_padding_mask is not None:
-        output_memory = output_memory.masked_fill(memory_padding_mask.unsqueeze(-1), float(0))
-    output_memory = output_memory.masked_fill(~output_proposals_valid, float(0))
+        output_memory = output_memory.masked_fill(memory_padding_mask.unsqueeze(-1), 0.0)
+    output_memory = output_memory.masked_fill(~output_proposals_valid, 0.0)
 
-    return output_memory.to(memory.dtype), output_proposals.to(memory.dtype)
+    return output_memory.to(memory.dtype), output_proposals_result.to(memory.dtype)
 
 
 class Transformer(nn.Module):
