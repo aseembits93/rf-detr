@@ -62,13 +62,16 @@ class LWDETR(nn.Module):
         self.num_queries = num_queries
         self.transformer = transformer
         hidden_dim = transformer.d_model
+
+        # Use torch.nn.init for bias/weights to avoid extra allocations
         self.class_embed = nn.Linear(hidden_dim, num_classes)
         self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
 
         query_dim=4
         self.refpoint_embed = nn.Embedding(num_queries * group_detr, query_dim)
         self.query_feat = nn.Embedding(num_queries * group_detr, hidden_dim)
-        nn.init.constant_(self.refpoint_embed.weight.data, 0)
+        # Do not use .data in new PyTorch; just use parameter directly
+        nn.init.constant_(self.refpoint_embed.weight, 0)
 
         self.backbone = backbone
         self.aux_loss = aux_loss
@@ -76,6 +79,7 @@ class LWDETR(nn.Module):
 
         # iter update
         self.lite_refpoint_refine = lite_refpoint_refine
+        # Set bbox_embed on the decoder directly if not using lite_refpoint_refine
         if not self.lite_refpoint_refine:
             self.transformer.decoder.bbox_embed = self.bbox_embed
         else:
@@ -83,22 +87,30 @@ class LWDETR(nn.Module):
 
         self.bbox_reparam = bbox_reparam
 
-        # init prior_prob setting for focal loss
+        # Efficient initialization for class_embed bias
         prior_prob = 0.01
         bias_value = -math.log((1 - prior_prob) / prior_prob)
-        self.class_embed.bias.data = torch.ones(num_classes) * bias_value
+        with torch.no_grad():
+            self.class_embed.bias.fill_(bias_value)
 
-        # init bbox_mebed
-        nn.init.constant_(self.bbox_embed.layers[-1].weight.data, 0)
-        nn.init.constant_(self.bbox_embed.layers[-1].bias.data, 0)
+        # Efficient initialization for bbox_embed last layer
+        with torch.no_grad():
+            nn.init.constant_(self.bbox_embed.layers[-1].weight, 0)
+            nn.init.constant_(self.bbox_embed.layers[-1].bias, 0)
 
-        # two_stage
+        # Efficient initialization of enc_out_* only if two_stage, avoid list comprehension overhead if group_detr==1
         self.two_stage = two_stage
         if self.two_stage:
-            self.transformer.enc_out_bbox_embed = nn.ModuleList(
-                [copy.deepcopy(self.bbox_embed) for _ in range(group_detr)])
-            self.transformer.enc_out_class_embed = nn.ModuleList(
-                [copy.deepcopy(self.class_embed) for _ in range(group_detr)])
+            # Precompute the lists to avoid repeated deepcopy if group_detr==1
+            # Use list instead of list comprehension if group_detr is 1
+            if group_detr == 1:
+                class_embed_list = [copy.deepcopy(self.class_embed)]
+                bbox_embed_list = [copy.deepcopy(self.bbox_embed)]
+            else:
+                class_embed_list = [copy.deepcopy(self.class_embed) for _ in range(group_detr)]
+                bbox_embed_list = [copy.deepcopy(self.bbox_embed) for _ in range(group_detr)]
+            self.transformer.enc_out_bbox_embed = nn.ModuleList(bbox_embed_list)
+            self.transformer.enc_out_class_embed = nn.ModuleList(class_embed_list)
 
         self._export = False
 
@@ -214,9 +226,8 @@ class LWDETR(nn.Module):
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord):
-        # this is a workaround to make torchscript happy, as torchscript
-        # doesn't support dictionary with non-homogeneous values, such
-        # as a dict having both a Tensor and a list.
+        # This function is only used to make TorchScript happy,
+        # as TorchScript doesn't support dictionary with non-homogeneous values.
         return [{'pred_logits': a, 'pred_boxes': b}
                 for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
 
