@@ -495,10 +495,15 @@ class Dinov2WithRegistersSdpaAttention(Dinov2WithRegistersAttention):
 class Dinov2WithRegistersLayerScale(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
-        self.lambda1 = nn.Parameter(config.layerscale_value * torch.ones(config.hidden_size))
+        # Precompute the layerscale parameter on the correct device/dtype
+        self.register_parameter(
+            'lambda1',
+            nn.Parameter(torch.full((config.hidden_size, ), config.layerscale_value, dtype=torch.get_default_dtype()))
+        )
 
     def forward(self, hidden_state: torch.Tensor) -> torch.Tensor:
-        return hidden_state * self.lambda1
+        # Use torch.mul for potentially better performance, leverage broadcasting semantics explicitly
+        return torch.mul(hidden_state, self.lambda1)
 
 
 def drop_path(input: torch.Tensor, drop_prob: float = 0.0, training: bool = False) -> torch.Tensor:
