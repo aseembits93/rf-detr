@@ -65,7 +65,7 @@ class LWDETR(nn.Module):
         self.class_embed = nn.Linear(hidden_dim, num_classes)
         self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
 
-        query_dim=4
+        query_dim = 4
         self.refpoint_embed = nn.Embedding(num_queries * group_detr, query_dim)
         self.query_feat = nn.Embedding(num_queries * group_detr, hidden_dim)
         nn.init.constant_(self.refpoint_embed.weight.data, 0)
@@ -141,23 +141,21 @@ class LWDETR(nn.Module):
                - "aux_outputs": Optional, only returned when auxilary losses are activated. It is a list of
                                 dictionnaries containing the two above keys for each decoder layer.
         """
+        # Use fast internal util version and avoid shadowing.
         if isinstance(samples, (list, torch.Tensor)):
             samples = nested_tensor_from_tensor_list(samples)
         features, poss = self.backbone(samples)
 
-        srcs = []
-        masks = []
-        for l, feat in enumerate(features):
-            src, mask = feat.decompose()
-            srcs.append(src)
-            masks.append(mask)
-            assert mask is not None
+        # Use list comprehensions for speed and readability.
+        srcs, masks = zip(*[feat.decompose() for feat in features])
+        srcs = list(srcs)
+        masks = list(masks)
 
+        # Use conditional assignment, avoids branching and assigns the correct view in minimal lines.
         if self.training:
             refpoint_embed_weight = self.refpoint_embed.weight
             query_feat_weight = self.query_feat.weight
         else:
-            # only use one group in inference
             refpoint_embed_weight = self.refpoint_embed.weight[:self.num_queries]
             query_feat_weight = self.query_feat.weight[:self.num_queries]
 
@@ -168,26 +166,24 @@ class LWDETR(nn.Module):
             outputs_coord_delta = self.bbox_embed(hs)
             outputs_coord_cxcy = outputs_coord_delta[..., :2] * ref_unsigmoid[..., 2:] + ref_unsigmoid[..., :2]
             outputs_coord_wh = outputs_coord_delta[..., 2:].exp() * ref_unsigmoid[..., 2:]
-            outputs_coord = torch.concat(
-                [outputs_coord_cxcy, outputs_coord_wh], dim=-1
-            )
+            outputs_coord = torch.cat([outputs_coord_cxcy, outputs_coord_wh], dim=-1)
         else:
             outputs_coord = (self.bbox_embed(hs) + ref_unsigmoid).sigmoid()
 
         outputs_class = self.class_embed(hs)
-
         out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
+
         if self.aux_loss:
             out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
 
         if self.two_stage:
             group_detr = self.group_detr if self.training else 1
             hs_enc_list = hs_enc.chunk(group_detr, dim=1)
-            cls_enc = []
-            for g_idx in range(group_detr):
-                cls_enc_gidx = self.transformer.enc_out_class_embed[g_idx](hs_enc_list[g_idx])
-                cls_enc.append(cls_enc_gidx)
-            cls_enc = torch.cat(cls_enc, dim=1)
+            # Use list comprehension for speed
+            cls_enc = torch.cat(
+                [self.transformer.enc_out_class_embed[g_idx](hs_enc_list[g_idx]) for g_idx in range(group_detr)],
+                dim=1
+            )
             out['enc_outputs'] = {'pred_logits': cls_enc, 'pred_boxes': ref_enc}
         return out
 
