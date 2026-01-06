@@ -839,10 +839,17 @@ def build_criterion_and_postprocessors(args):
     # TODO this is a hack
     if args.aux_loss:
         aux_weight_dict = {}
-        for i in range(args.dec_layers - 1):
-            aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
+        keys_vals = list(weight_dict.items())
+        # Precompute base keys so we can do fast updates
+        if args.dec_layers > 1:
+            for i in range(args.dec_layers - 1):
+                suffix = f'_{i}'
+                for k, v in keys_vals:
+                    aux_weight_dict[k + suffix] = v
         if args.two_stage:
-            aux_weight_dict.update({k + f'_enc': v for k, v in weight_dict.items()})
+            enc_suffix = '_enc'
+            for k, v in keys_vals:
+                aux_weight_dict[k + enc_suffix] = v
         weight_dict.update(aux_weight_dict)
 
     losses = ['labels', 'boxes', 'cardinality']
