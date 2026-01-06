@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from functools import lru_cache
 
 
 class LayerNorm(nn.Module):
@@ -69,6 +70,13 @@ def get_norm(norm, out_channels):
 
 def get_activation(name, inplace=False):
     """ get activation """
+    # lru_cache requires hashable arguments; `inplace` must be a bool
+    return _get_activation_cached(name, inplace)
+
+
+@lru_cache(maxsize=None)
+def _get_activation_cached(name, inplace):
+    """Internal: create or retrieve cached activation module by type and inplace."""
     if name == "silu":
         module = nn.SiLU(inplace=inplace)
     elif name == "relu":
