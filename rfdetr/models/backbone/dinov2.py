@@ -14,6 +14,11 @@ import json
 import os
 
 from .dinov2_with_windowed_attn import WindowedDinov2WithRegistersConfig, WindowedDinov2WithRegistersBackbone
+from functools import lru_cache
+
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+
+_configs_dir = os.path.join(_current_dir, "dinov2_configs")
 
 
 size_to_width = {
@@ -37,12 +42,13 @@ size_to_config_with_registers = {
 
 def get_config(size, use_registers):
     config_dict = size_to_config_with_registers if use_registers else size_to_config
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    configs_dir = os.path.join(current_dir, "dinov2_configs")
-    config_path = os.path.join(configs_dir, config_dict[size])
+    return _load_dino_config(config_dict[size])
+
+@lru_cache(maxsize=8)
+def _load_dino_config(config_filename):
+    config_path = os.path.join(_configs_dir, config_filename)
     with open(config_path, "r") as f:
-        dino_config = json.load(f)
-    return dino_config
+        return json.load(f)
 
 
 class DinoV2(nn.Module):
