@@ -124,13 +124,14 @@ class CocoEvaluator(object):
             labels = prediction["labels"]
             masks = prediction["masks"]
 
-            masks = masks > 0.5
+            masks_np = masks.cpu().numpy()
+            masks = masks_np > 0.5
 
             scores = prediction["scores"].tolist()
             labels = prediction["labels"].tolist()
 
             rles = [
-                mask_util.encode(np.array(mask.cpu()[0, :, :, np.newaxis], dtype=np.uint8, order="F"))[0]
+                mask_util.encode(np.array(mask[0, :, :, np.newaxis], dtype=np.uint8, order="F"))[0]
                 for mask in masks
             ]
             for rle in rles:
