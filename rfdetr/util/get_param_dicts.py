@@ -34,7 +34,6 @@ def get_vit_lr_decay_rate(name, lr_decay_rate=1.0, num_layers=12):
 def get_vit_weight_decay_rate(name, weight_decay_rate=1.0):
     if ('gamma' in name) or ('pos_embed' in name) or ('rel_pos' in name) or ('bias' in name) or ('norm' in name):
         weight_decay_rate = 0.
-    print("name: {}, weight_decay rate: {}".format(name, weight_decay_rate))
     return weight_decay_rate
 
 
