@@ -45,6 +45,7 @@ class ModelEma(torch.nn.Module):
 
 
 class BestMetricSingle():
+    
     def __init__(self, init_res=0.0, better='large') -> None:
         self.init_res = init_res
         self.best_res = init_res
@@ -53,6 +54,9 @@ class BestMetricSingle():
         self.better = better
         assert better in ['large', 'small']
 
+        # Cache comparison type to avoid string comparison in hot path
+        self._is_large = (better == 'large')
+
     def isbetter(self, new_res, old_res):
         if self.better == 'large':
             return new_res > old_res
@@ -60,7 +64,9 @@ class BestMetricSingle():
             return new_res < old_res
 
     def update(self, new_res, ep):
-        if self.isbetter(new_res, self.best_res):
+        # Inline the comparison to avoid method call overhead
+        if (self._is_large and new_res > self.best_res) or \
+           (not self._is_large and new_res < self.best_res):
             self.best_res = new_res
             self.best_ep = ep
             return True
@@ -80,6 +86,7 @@ class BestMetricSingle():
 
 
 class BestMetricHolder():
+    
     def __init__(self, init_res=0.0, better='large', use_ema=False) -> None:
         self.best_all = BestMetricSingle(init_res, better)
         self.use_ema = use_ema
@@ -93,13 +100,13 @@ class BestMetricHolder():
         """
         if not self.use_ema:
             return self.best_all.update(new_res, epoch)
+        
+        # Simplified logic: always update best_all, conditionally update ema/regular
+        if is_ema:
+            self.best_ema.update(new_res, epoch)
         else:
-            if is_ema:
-                self.best_ema.update(new_res, epoch)
-                return self.best_all.update(new_res, epoch)
-            else:
-                self.best_regular.update(new_res, epoch)
-                return self.best_all.update(new_res, epoch)
+            self.best_regular.update(new_res, epoch)
+        return self.best_all.update(new_res, epoch)
 
     def summary(self):
         if not self.use_ema:
