@@ -188,8 +188,10 @@ def get_dinov2_lr_decay_rate(name, lr_decay_rate=1.0, num_layers=12):
     if name.startswith("backbone"):
         if "embeddings" in name:
             layer_id = 0
-        elif ".layer." in name and ".residual." not in name:
-            layer_id = int(name[name.find(".layer.") :].split(".")[2]) + 1
+        else:
+            layer_pos = name.find(".layer.")
+            if layer_pos != -1 and ".residual." not in name:
+                layer_id = int(name[layer_pos + 7:].split(".", 1)[0]) + 1
     return lr_decay_rate ** (num_layers + 1 - layer_id)
 
 def get_dinov2_weight_decay_rate(name, weight_decay_rate=1.0):
