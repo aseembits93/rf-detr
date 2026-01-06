@@ -53,10 +53,12 @@ class BestMetricSingle():
         self.better = better
         assert better in ['large', 'small']
 
+        self._is_large = better == 'large'  # Precompute the comparison kind
+
     def isbetter(self, new_res, old_res):
-        if self.better == 'large':
+        if self._is_large:
             return new_res > old_res
-        if self.better == 'small':
+        else:
             return new_res < old_res
 
     def update(self, new_res, ep):
