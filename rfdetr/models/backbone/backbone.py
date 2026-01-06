@@ -152,19 +152,27 @@ class Backbone(BackboneBase):
         num_layers = args.out_feature_indexes[-1] + 1
         backbone_key = "backbone.0.encoder"
         named_param_lr_pairs = {}
+        
+        # Cache frequently accessed attributes
+        lr_encoder = args.lr_encoder
+        lr_vit_layer_decay = args.lr_vit_layer_decay
+        lr_component_decay_sq = args.lr_component_decay ** 2
+        weight_decay = args.weight_decay
+        prefix_dot = prefix + "."
+        
         for n, p in self.named_parameters():
-            n = prefix + "." + n
+            n = prefix_dot + n
             if backbone_key in n and p.requires_grad:
                 lr = (
-                    args.lr_encoder
+                    lr_encoder
                     * get_dinov2_lr_decay_rate(
                         n,
-                        lr_decay_rate=args.lr_vit_layer_decay,
+                        lr_decay_rate=lr_vit_layer_decay,
                         num_layers=num_layers,
                     )
-                    * args.lr_component_decay**2
+                    * lr_component_decay_sq
                 )
-                wd = args.weight_decay * get_dinov2_weight_decay_rate(n)
+                wd = weight_decay * get_dinov2_weight_decay_rate(n)
                 named_param_lr_pairs[n] = {
                     "params": p,
                     "lr": lr,
@@ -189,17 +197,19 @@ def get_dinov2_lr_decay_rate(name, lr_decay_rate=1.0, num_layers=12):
         if "embeddings" in name:
             layer_id = 0
         elif ".layer." in name and ".residual." not in name:
-            layer_id = int(name[name.find(".layer.") :].split(".")[2]) + 1
+            # Optimize string slicing and splitting
+            layer_start = name.find(".layer.")
+            layer_id = int(name[layer_start + 7:].split(".", 1)[0]) + 1
     return lr_decay_rate ** (num_layers + 1 - layer_id)
 
 def get_dinov2_weight_decay_rate(name, weight_decay_rate=1.0):
     if (
-        ("gamma" in name)
-        or ("pos_embed" in name)
-        or ("rel_pos" in name)
-        or ("bias" in name)
-        or ("norm" in name)
-        or ("embeddings" in name)
+        "gamma" in name
+        or "pos_embed" in name
+        or "rel_pos" in name
+        or "bias" in name
+        or "norm" in name
+        or "embeddings" in name
     ):
         weight_decay_rate = 0.0
     return weight_decay_rate
