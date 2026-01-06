@@ -39,6 +39,9 @@ class PositionEmbeddingSine(nn.Module):
             scale = 2 * math.pi
         self.scale = scale
         self._export = False
+        
+        dim_t = torch.arange(num_pos_feats, dtype=torch.float32)
+        self.register_buffer('dim_t', temperature ** (2 * (dim_t // 2) / num_pos_feats))
     
     def export(self):
         self._export = True
@@ -82,8 +85,7 @@ class PositionEmbeddingSine(nn.Module):
             y_embed = y_embed / (y_embed[:, -1:, :] + eps) * self.scale
             x_embed = x_embed / (x_embed[:, :, -1:] + eps) * self.scale
 
-        dim_t = torch.arange(self.num_pos_feats, dtype=torch.float32, device=mask.device)
-        dim_t = self.temperature ** (2 * (dim_t // 2) / self.num_pos_feats)
+        dim_t = self.dim_t.to(mask.device)
 
         pos_x = x_embed[:, :, :, None] / dim_t
         pos_y = y_embed[:, :, :, None] / dim_t
@@ -91,10 +93,8 @@ class PositionEmbeddingSine(nn.Module):
         pos_y = torch.stack((pos_y[:, :, :, 0::2].sin(), pos_y[:, :, :, 1::2].cos()), dim=4).flatten(3)
         if align_dim_orders:
             pos = torch.cat((pos_y, pos_x), dim=3).permute(1, 2, 0, 3)
-            # return: (H, W, bs, C)
         else:
             pos = torch.cat((pos_y, pos_x), dim=3).permute(0, 3, 1, 2)
-            # return: (bs, C, H, W)
         return pos
 
 
