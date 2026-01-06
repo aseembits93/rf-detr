@@ -16,6 +16,7 @@ import os
 import pdb
 from posixpath import join
 import sys
+import math
 
 
 sys.path.append(os.path.dirname(sys.path[0]))
@@ -51,13 +52,13 @@ def get_shape(val: object) -> typing.List[int]:
         if not r:
             r = [1]
         return r
-    elif val.type().kind() in ("IntType", "FloatType"):
+    
+    val_type = val.type()
+    kind = val_type.kind()
+    
+    if kind in ("IntType", "FloatType", "ListType"):
         return [1]
-    elif val.type().kind() in ("StringType",):
-        return [0]
-    elif val.type().kind() in ("ListType",):
-        return [1]
-    elif val.type().kind() in ("BoolType", "NoneType"):
+    elif kind in ("StringType", "BoolType", "NoneType"):
         return [0]
     else:
         raise ValueError()
@@ -125,7 +126,7 @@ def rsqrt_flop_jit(inputs, outputs):
 
 def dropout_flop_jit(inputs, outputs):
     input_shapes = [get_shape(v) for v in inputs[:1]]
-    flop = prod(input_shapes[0])
+    flop = math.prod(input_shapes[0])
     flop_counter = Counter({"dropout": flop})
     return flop_counter
 
