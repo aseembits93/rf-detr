@@ -34,6 +34,7 @@ def box_xyxy_to_cxcywh(x):
 
 
 # modified from torchvision to also return the union
+@torch.compile
 def box_iou(boxes1, boxes2):
     area1 = box_area(boxes1)
     area2 = box_area(boxes2)
