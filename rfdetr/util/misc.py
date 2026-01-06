@@ -305,6 +305,7 @@ class NestedTensor(object):
     def __init__(self, tensors, mask: Optional[Tensor]):
         self.tensors = tensors
         self.mask = mask
+        self._decomposed = (tensors, mask)
 
     def to(self, device):
         # type: (Device) -> NestedTensor # noqa
@@ -318,7 +319,7 @@ class NestedTensor(object):
         return NestedTensor(cast_tensor, cast_mask)
 
     def decompose(self):
-        return self.tensors, self.mask
+        return self._decomposed
 
     def __repr__(self):
         return str(self.tensors)
