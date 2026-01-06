@@ -34,7 +34,7 @@ from rfdetr.util.misc import (NestedTensor, nested_tensor_from_tensor_list,
 from rfdetr.models.backbone import build_backbone
 from rfdetr.models.matcher import build_matcher
 from rfdetr.models.transformer import build_transformer
-from rfdetr.models.segmentation_head import SegmentationHead, get_uncertain_point_coords_with_randomness, point_sample
+from rfdetr.models.segmentation_head import get_uncertain_point_coords_with_randomness_jit, point_sample_jit, SegmentationHead, get_uncertain_point_coords_with_randomness, point_sample
 
 class LWDETR(nn.Module):
     """ This is the Group DETR v3 module that performs object detection """
@@ -473,22 +473,21 @@ class SetCriterion(nn.Module):
 
         with torch.no_grad():
             # sample point_coords
-            point_coords = get_uncertain_point_coords_with_randomness(
+            point_coords = get_uncertain_point_coords_with_randomness_jit(
                 src_masks,
-                lambda logits: calculate_uncertainty(logits),
                 num_points,
                 3,
                 0.75,
             )
             # get gt labels
-            point_labels = point_sample(
+            point_labels = point_sample_jit(
                 target_masks,
                 point_coords,
                 align_corners=False,
                 mode="nearest",
             ).squeeze(1)
 
-        point_logits = point_sample(
+        point_logits = point_sample_jit(
             src_masks,
             point_coords,
             align_corners=False,
