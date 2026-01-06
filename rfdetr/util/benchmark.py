@@ -51,13 +51,18 @@ def get_shape(val: object) -> typing.List[int]:
         if not r:
             r = [1]
         return r
-    elif val.type().kind() in ("IntType", "FloatType"):
+    
+    # Cache type object to avoid multiple val.type() calls
+    val_type = val.type()
+    kind = val_type.kind()
+    
+    if kind in ("IntType", "FloatType"):
         return [1]
-    elif val.type().kind() in ("StringType",):
+    elif kind in ("StringType",):
         return [0]
-    elif val.type().kind() in ("ListType",):
+    elif kind in ("ListType",):
         return [1]
-    elif val.type().kind() in ("BoolType", "NoneType"):
+    elif kind in ("BoolType", "NoneType"):
         return [0]
     else:
         raise ValueError()
@@ -94,13 +99,16 @@ def addmm_flop_jit(
 def bmm_flop_jit(inputs, outputs):
     # Count flop for nn.Linear
     # inputs is a list of length 3.
-    input_shapes = [get_shape(v) for v in inputs]
+    # Directly extract shapes without intermediate list
+    shape0 = get_shape(inputs[0])
+    shape1 = get_shape(inputs[1])
+    
     # input_shapes[0]: [batch size, input feature dimension]
     # input_shapes[1]: [batch size, output feature dimension]
-    assert len(input_shapes[0]) == 3
-    assert len(input_shapes[1]) == 3
-    T, batch_size, input_dim = input_shapes[0]
-    output_dim = input_shapes[1][2]
+    assert len(shape0) == 3
+    assert len(shape1) == 3
+    T, batch_size, input_dim = shape0
+    output_dim = shape1[2]
     flop = T * batch_size * input_dim * output_dim
     flop_counter = Counter({"bmm": flop})
     return flop_counter
