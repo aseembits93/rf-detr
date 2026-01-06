@@ -51,13 +51,14 @@ def get_shape(val: object) -> typing.List[int]:
         if not r:
             r = [1]
         return r
-    elif val.type().kind() in ("IntType", "FloatType"):
+    kind = val.type().kind()
+    if kind in ("IntType", "FloatType"):
         return [1]
-    elif val.type().kind() in ("StringType",):
+    elif kind in ("StringType",):
         return [0]
-    elif val.type().kind() in ("ListType",):
+    elif kind in ("ListType",):
         return [1]
-    elif val.type().kind() in ("BoolType", "NoneType"):
+    elif kind in ("BoolType", "NoneType"):
         return [0]
     else:
         raise ValueError()
@@ -314,11 +315,12 @@ def linear_flop_jit(inputs: List[Any], outputs: List[Any]) -> Number:
     """
     # Inputs is a list of length 3; unlike aten::addmm, it is the first
     # two elements that are relevant.
-    input_shapes = [get_shape(v) for v in inputs[0:2]]
+    s0 = get_shape(inputs[0])
+    s1 = get_shape(inputs[1])
     # input_shapes[0]: [dim0, dim1, ..., input_feature_dim]
     # input_shapes[1]: [output_feature_dim, input_feature_dim]
-    assert input_shapes[0][-1] == input_shapes[1][-1]
-    flops = prod(input_shapes[0]) * input_shapes[1][0]
+    assert s0[-1] == s1[-1]
+    flops = _fast_prod(s0) * s1[0]
     flop_counter = Counter({"linear": flops})
     return flop_counter
 
@@ -627,6 +629,15 @@ def benchmark(model, dataset, output_dir):
         f.write(json.dumps(_outputs, indent=2) + "\n")
 
     return _outputs
+
+
+
+def _fast_prod(seq) -> int:
+    # Fast integer product, avoids numpy.prod/overhead
+    result = 1
+    for v in seq:
+        result *= v
+    return result
 
 
 # if __name__ == "__main__":
