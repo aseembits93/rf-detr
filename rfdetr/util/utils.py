@@ -105,11 +105,14 @@ class BestMetricHolder():
         if not self.use_ema:
             return self.best_all.summary()
 
-        res = {}
-        res.update({f'all_{k}':v for k,v in self.best_all.summary().items()})
-        res.update({f'regular_{k}':v for k,v in self.best_regular.summary().items()})
-        res.update({f'ema_{k}':v for k,v in self.best_ema.summary().items()})
-        return res
+        return {
+            'all_best_res': self.best_all.best_res,
+            'all_best_ep': self.best_all.best_ep,
+            'regular_best_res': self.best_regular.best_res,
+            'regular_best_ep': self.best_regular.best_ep,
+            'ema_best_res': self.best_ema.best_res,
+            'ema_best_ep': self.best_ema.best_ep,
+        }
 
     def __repr__(self) -> str:
         return json.dumps(self.summary(), indent=2)
