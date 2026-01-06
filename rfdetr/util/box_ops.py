@@ -50,6 +50,7 @@ def box_iou(boxes1, boxes2):
     return iou, union
 
 
+@torch.compile
 def generalized_box_iou(boxes1, boxes2):
     """
     Generalized IoU from https://giou.stanford.edu/
