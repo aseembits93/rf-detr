@@ -279,7 +279,9 @@ class PILtoNdArray(object):
 class NdArraytoPIL(object):
 
     def __call__(self, img, target):
-        return F.to_pil_image(img.astype('uint8')), target
+        if img.dtype != np.uint8:
+            img = img.astype('uint8')
+        return F.to_pil_image(img), target
 
 
 class Pad(object):
