@@ -404,7 +404,15 @@ def main(
     if path.endswith(".onnx"):
         import onnxruntime as nxrun
 
-        sess = nxrun.InferenceSession(path, providers=["CUDAExecutionProvider"])
+        available = nxrun.get_available_providers()
+        providers = []
+        if "TensorrtExecutionProvider" in available:
+            providers.append("TensorrtExecutionProvider")
+        if "CUDAExecutionProvider" in available:
+            providers.append("CUDAExecutionProvider")
+        providers.append("CPUExecutionProvider")
+        logger.info("Using ORT execution providers: %s", providers)
+        sess = nxrun.InferenceSession(path, providers=providers)
         infer_onnx(sess, coco_evaluator, time_profile, prefix, img_list, device=f"cuda:{device}", repeats=repeats)
     elif path.endswith(".engine"):
         model = TRTInference(path, sync_mode=True, device=f"cuda:{device}")
