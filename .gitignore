@@ -209,3 +209,11 @@ cache-gh/
 checkpoints/
 releases/
 tasks/
+
+# GPU profiling results
+profile_results/
+*.nsys-rep
+*.ncu-rep
+*.sqlite
+*.qdrep
+*.qdstrm

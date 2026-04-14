@@ -43,6 +43,7 @@ dependencies = [
     "pydantic>=2.0,<3",               # ModelConfig / TrainConfig validation
     "supervision",                     # inference output (Detections, Masks)
     "pyDeprecate>=0.6,<0.8",             # deprecation warnings for legacy APIs; >=0.6 for deprecated_class
+    "nsight-python"
 ]
 
 [project.optional-dependencies]
@@ -132,6 +133,7 @@ docs = [
     "mkdocs-git-committers-plugin-2>=2.4.1",
     "mkdocs-git-revision-date-localized-plugin>=1.2.4"
 ]
+
 
 [project.urls]
 Homepage = "https://github.com/roboflow/rf-detr"
