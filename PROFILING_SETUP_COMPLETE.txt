@@ -1,0 +1,158 @@
+╔═══════════════════════════════════════════════════════════════════════╗
+║                  NVIDIA PROFILING SETUP COMPLETE ✓                    ║
+║               with nsight-python Package Integration                  ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+SYSTEM CONFIGURATION
+════════════════════════════════════════════════════════════════════════
+GPU:               Tesla T4 (15GB VRAM)
+Driver:            580.126.09 (CUDA 13.0 support)
+CUDA Toolkit:      12.8
+Nsight Systems:    2024.6.2
+Nsight Compute:    12.8.1
+nsight-python:     0.9.6 ✓ NEW
+
+INSTALLED SCRIPTS & TOOLS
+════════════════════════════════════════════════════════════════════════
+✓ profile_gpu.sh              - Shell wrapper for easy profiling
+✓ profile_utils.py            - Python utilities (NVTX, timing, memory)
+✓ profile_nsight.py           - Nsight-python profiling with annotations
+✓ profile_nsight_analysis.py  - Automated profile analysis
+✓ test_profiling_setup.sh     - Test suite for validation
+
+DOCUMENTATION
+════════════════════════════════════════════════════════════════════════
+✓ PROFILING.md                - Comprehensive profiling guide
+✓ PROFILING_QUICKREF.md       - Quick reference cheat sheet
+✓ PROFILING_NSIGHT_PYTHON.md  - Nsight Python SDK guide
+
+QUICK START EXAMPLES
+════════════════════════════════════════════════════════════════════════
+
+1. Basic Profiling (Easiest)
+   $ ./profile_gpu.sh -- python your_script.py
+
+2. With Custom Annotations
+   # In your Python code:
+   from profile_utils import nvtx_range
+   
+   with nvtx_range("my_operation"):
+       output = model(input)
+   
+   # Then profile:
+   $ ./profile_gpu.sh -- python script.py
+
+3. Benchmark Inference
+   $ python profile_nsight.py --mode benchmark --model-type simple
+   
+   # Or with RF-DETR:
+   $ nsys profile --trace=cuda,nvtx --output=result \
+       uv run python profile_nsight.py --mode benchmark --model-type rfdetr
+
+4. Analyze Existing Profiles
+   $ python profile_nsight_analysis.py profile.nsys-rep
+   
+   # Detailed analysis:
+   $ python profile_nsight_analysis.py profile.nsys-rep --full
+
+5. View Results
+   $ nsys stats profile.nsys-rep --report cuda_api_sum
+   $ nsys-ui profile.nsys-rep  # GUI (requires X11)
+
+PYTHON API EXAMPLES
+════════════════════════════════════════════════════════════════════════
+
+NVTX Annotations (Nested Support):
+   from profile_utils import nvtx_range
+   
+   with nvtx_range("training_step"):
+       with nvtx_range("forward"):
+           output = model(input)
+       with nvtx_range("backward"):
+           loss.backward()
+
+Accurate CUDA Timing:
+   from profile_utils import CUDATimer
+   
+   with CUDATimer() as timer:
+       output = model(input)
+   print(f"Time: {timer.elapsed_time_ms:.2f} ms")
+
+Benchmark with Stats:
+   from profile_utils import benchmark_inference
+   
+   stats = benchmark_inference(model, input, num_iterations=100)
+   print(f"Mean: {stats['mean_ms']:.2f} ± {stats['std_ms']:.2f} ms")
+
+Profile Section (Timing + Memory):
+   from profile_utils import profile_section
+   
+   with profile_section("data_loading"):
+       data = load_batch()
+
+Memory Profiling:
+   from profile_utils import print_memory_usage
+   
+   print_memory_usage("After model load: ")
+
+WORKFLOW RECOMMENDATIONS
+════════════════════════════════════════════════════════════════════════
+
+For Quick Profiling:
+  → Use profile_gpu.sh directly (no code changes needed)
+
+For Detailed Analysis:
+  → Add NVTX annotations with profile_utils.py
+  → Profile with profile_gpu.sh
+  → Analyze with profile_nsight_analysis.py
+
+For Automated Benchmarking:
+  → Use profile_nsight.py with nsys profile wrapper
+
+For Production Monitoring:
+  → Keep NVTX annotations in code (negligible overhead)
+  → Enable profiling only when needed
+
+VALIDATION
+════════════════════════════════════════════════════════════════════════
+Run the test suite to verify everything works:
+
+  $ ./test_profiling_setup.sh
+
+Expected output: "ALL TESTS PASSED ✓"
+
+KEY FEATURES
+════════════════════════════════════════════════════════════════════════
+✓ Zero-friction profiling with profile_gpu.sh
+✓ Rich NVTX annotations support (nested)
+✓ Accurate CUDA timing utilities
+✓ Memory profiling helpers
+✓ Automated profile analysis with nsight-python
+✓ GPU kernel and API call extraction
+✓ Comprehensive documentation
+✓ Tested and validated
+
+IMPORTANT NOTES
+════════════════════════════════════════════════════════════════════════
+• nsight-python's annotation.annotate() does NOT support nesting
+  → Use torch.cuda.nvtx or profile_utils.nvtx_range() instead
+
+• Profile files are in .gitignore (won't be committed)
+
+• All scripts work with 'uv run' for environment management
+
+• NVTX annotations have negligible overhead when not profiling
+
+TROUBLESHOOTING
+════════════════════════════════════════════════════════════════════════
+If tests fail:
+  1. Source environment: source ~/.bashrc
+  2. Check CUDA in PATH: which nvcc
+  3. Verify GPU: nvidia-smi
+  4. Check Python packages: uv run python -c "import nsight"
+
+For support, see documentation files or GPU profiling guides.
+
+═══════════════════════════════════════════════════════════════════════
+Ready to profile! Run ./test_profiling_setup.sh to validate. 🚀
+═══════════════════════════════════════════════════════════════════════
