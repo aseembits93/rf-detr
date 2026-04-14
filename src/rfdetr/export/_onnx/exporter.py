@@ -62,6 +62,7 @@ def export_onnx(
     verbose: bool = True,
     opset_version: int = 17,
     variant_name: str | None = None,
+    optimize: bool = False,
 ) -> str:
     """Export a model to ONNX.
 
@@ -79,6 +80,10 @@ def export_onnx(
             When provided, the exported file is named ``{variant_name}.onnx`` or
             ``{variant_name}-backbone.onnx`` (when ``backbone_only=True``) instead
             of the generic ``inference_model.onnx`` or ``backbone_model.onnx``.
+        optimize: When ``True``, run :class:`OnnxOptimizer` constant folding and
+            shape inference on the exported graph (overwrites the file in-place).
+            Requires the ``rfdetr[onnx]`` extras (``onnx``, ``onnx-graphsurgeon``,
+            ``polygraphy``).
 
     Returns:
         Path to the exported ONNX model.
@@ -117,6 +122,16 @@ def export_onnx(
     )
 
     logger.info(f"\nSuccessfully exported ONNX model: {output_file}")
+
+    if optimize:
+        try:
+            opt = OnnxOptimizer(output_file)
+            opt.common_opt()
+            opt.save_onnx(output_file)
+            logger.info(f"ONNX graph optimized: {output_file}")
+        except ImportError:
+            logger.warning("ONNX graph optimization skipped: install rfdetr[onnx] for full optimization support.")
+
     return output_file
 
 
