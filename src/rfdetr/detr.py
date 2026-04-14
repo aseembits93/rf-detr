@@ -770,6 +770,7 @@ class RFDETR:
         batch_size: int = 1,
         dynamic_batch: bool = False,
         patch_size: int | None = None,
+        fp16: bool = False,
     ) -> None:
         """Export the trained model to ONNX format.
 
@@ -793,6 +794,9 @@ class RFDETR:
                 ``model_config.patch_size`` (typically 14 or 16). When provided
                 explicitly it must match the instantiated model's patch size.
                 Shape divisibility is validated against ``patch_size * num_windows``.
+            fp16: If ``True``, export the model in float16 precision. The output
+                file will be named ``*_fp16.onnx``. Produces a ~2x smaller ONNX
+                file and enables FP16 kernels in ONNX Runtime.
         """
         logger.info("Exporting model to ONNX format")
         try:
@@ -827,6 +831,8 @@ class RFDETR:
             shape = _validate_shape_dims(shape, block_size, patch_size, num_windows)
 
         input_tensors = make_infer_image(infer_dir, shape, batch_size, device).to(device)
+        if fp16:
+            input_tensors = input_tensors.half()
         input_names = ["input"]
         if backbone_only:
             output_names = ["features"]
@@ -876,6 +882,7 @@ class RFDETR:
             verbose=verbose,
             opset_version=opset_version,
             variant_name=getattr(self, "size", None),
+            fp16=fp16,
         )
 
         logger.info(f"Successfully exported ONNX model to: {output_file}")

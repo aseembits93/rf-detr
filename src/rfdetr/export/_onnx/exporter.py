@@ -62,6 +62,7 @@ def export_onnx(
     verbose: bool = True,
     opset_version: int = 17,
     variant_name: str | None = None,
+    fp16: bool = False,
 ) -> str:
     """Export a model to ONNX.
 
@@ -79,6 +80,8 @@ def export_onnx(
             When provided, the exported file is named ``{variant_name}.onnx`` or
             ``{variant_name}-backbone.onnx`` (when ``backbone_only=True``) instead
             of the generic ``inference_model.onnx`` or ``backbone_model.onnx``.
+        fp16: If ``True``, cast the model and input tensors to float16 before
+            export. The output file will be named ``*_fp16.onnx``.
 
     Returns:
         Path to the exported ONNX model.
@@ -89,11 +92,20 @@ def export_onnx(
         export_name = f"{variant_name}-backbone" if backbone_only else variant_name
     else:
         export_name = "backbone_model" if backbone_only else "inference_model"
+    if fp16:
+        export_name = f"{export_name}_fp16"
     output_file = os.path.join(output_dir, f"{export_name}.onnx")
 
     # Prepare model for export
     if hasattr(model, "export"):
         model.export()
+
+    if fp16:
+        model.half()
+        if isinstance(input_tensors, torch.Tensor):
+            input_tensors = input_tensors.half()
+        else:
+            input_tensors = [t.half() for t in input_tensors]
 
     export_kwargs = {}
     if "dynamo" in inspect.signature(torch.onnx.export).parameters:
