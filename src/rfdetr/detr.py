@@ -770,6 +770,7 @@ class RFDETR:
         batch_size: int = 1,
         dynamic_batch: bool = False,
         patch_size: int | None = None,
+        optimize: bool = False,
     ) -> None:
         """Export the trained model to ONNX format.
 
@@ -793,6 +794,9 @@ class RFDETR:
                 ``model_config.patch_size`` (typically 14 or 16). When provided
                 explicitly it must match the instantiated model's patch size.
                 Shape divisibility is validated against ``patch_size * num_windows``.
+            optimize: When ``True``, run :class:`~rfdetr.export._onnx.exporter.OnnxOptimizer`
+                constant folding and shape inference on the exported ONNX graph
+                (overwrites the file in-place). Requires the ``rfdetr[onnx]`` extras.
         """
         logger.info("Exporting model to ONNX format")
         try:
@@ -876,6 +880,7 @@ class RFDETR:
             verbose=verbose,
             opset_version=opset_version,
             variant_name=getattr(self, "size", None),
+            optimize=optimize,
         )
 
         logger.info(f"Successfully exported ONNX model to: {output_file}")
