@@ -303,10 +303,41 @@ class TRTInference(object):
                 _ = self(blob)
         return self.time_profile.total / n
 
-    def build_engine(self, onnx_file_path, engine_file_path, max_batch_size=32):
-        """Takes an ONNX file and creates a TensorRT engine to run inference with
-        http://gitlab.baidu.com/paddle-inference/benchmark/blob/main/backend_trt.py#L57
+    def build_engine(
+        self,
+        onnx_file_path: str,
+        engine_file_path: str,
+        max_batch_size: int = 32,
+        force_rebuild: bool = False,
+    ):
+        """Takes an ONNX file and creates a TensorRT engine to run inference with.
+
+        If a serialized engine file already exists at ``engine_file_path`` and
+        ``force_rebuild`` is ``False``, the file is read and returned directly,
+        skipping the (potentially multi-minute) TensorRT build step.  Set
+        ``force_rebuild=True`` to discard any cached engine and rebuild from the
+        ONNX model unconditionally.
+
+        Reference:
+            http://gitlab.baidu.com/paddle-inference/benchmark/blob/main/backend_trt.py#L57
+
+        Args:
+            onnx_file_path: Path to the source ONNX model file.
+            engine_file_path: Path where the serialized TensorRT engine is written
+                (or read from when a cache hit occurs).
+            max_batch_size: Maximum batch size the engine should support.
+            force_rebuild: When ``True``, ignore any existing engine file and
+                rebuild from the ONNX model.  Defaults to ``False``.
+
+        Returns:
+            The raw serialized TensorRT engine bytes, or ``None`` if the ONNX
+            file could not be parsed.
         """
+        if os.path.isfile(engine_file_path) and not force_rebuild:
+            logger.info(f"Reusing existing TensorRT engine: {engine_file_path}")
+            with open(engine_file_path, "rb") as f:
+                return f.read()
+
         explicit_batch_flag = 1 << (int)(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
         with (
             trt.Builder(self.logger) as builder,
