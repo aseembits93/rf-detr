@@ -32,20 +32,56 @@ def run_command_shell(command, dry_run: bool = False) -> subprocess.CompletedPro
         raise
 
 
-def trtexec(onnx_dir: str, args) -> None:
+def trtexec(
+    onnx_dir: str,
+    args,
+    *,
+    workspace_mb: int = 4096,
+    fp16: bool = True,
+    warm_up: int = 500,
+    avg_runs: int = 1000,
+    duration: int = 10,
+) -> None:
+    """Run trtexec to build a TensorRT engine from an ONNX model.
+
+    Args:
+        onnx_dir: Path to the input ONNX file.
+        args: Argument namespace from the CLI. The following optional attributes
+            are read and override the corresponding keyword defaults when present:
+            ``trt_workspace_mb``, ``trt_fp16``, ``trt_warm_up``, ``trt_avg_runs``,
+            ``trt_duration``.
+        workspace_mb: GPU workspace memory pool size in MiB. Defaults to 4096.
+        fp16: Whether to enable FP16 precision. Defaults to True.
+        warm_up: Number of warm-up iterations for benchmarking. Defaults to 500.
+        avg_runs: Number of averaging iterations for benchmarking. Defaults to 1000.
+        duration: Minimum benchmarking duration in seconds. Defaults to 10.
+    """
+    workspace_mb = getattr(args, "trt_workspace_mb", workspace_mb)
+    fp16 = getattr(args, "trt_fp16", fp16)
+    warm_up = getattr(args, "trt_warm_up", warm_up)
+    avg_runs = getattr(args, "trt_avg_runs", avg_runs)
+    duration = getattr(args, "trt_duration", duration)
+
     engine_dir = onnx_dir.replace(".onnx", ".engine")
 
+    trt_parts = [
+        "trtexec",
+        f"--onnx={onnx_dir}",
+        f"--saveEngine={engine_dir}",
+        f"--memPoolSize=workspace:{workspace_mb}",
+        "--useCudaGraph",
+        "--useSpinWait",
+        f"--warmUp={warm_up}",
+        f"--avgRuns={avg_runs}",
+        f"--duration={duration}",
+    ]
+    if fp16:
+        trt_parts.append("--fp16")
+    if args.verbose:
+        trt_parts.append("--verbose")
+
     # Base trtexec command
-    trt_command = " ".join(
-        [
-            "trtexec",
-            f"--onnx={onnx_dir}",
-            f"--saveEngine={engine_dir}",
-            "--memPoolSize=workspace:4096 --fp16",
-            "--useCudaGraph --useSpinWait --warmUp=500 --avgRuns=1000 --duration=10",
-            f"{'--verbose' if args.verbose else ''}",
-        ]
-    )
+    trt_command = " ".join(trt_parts)
 
     if args.profile:
         profile_dir = onnx_dir.replace(".onnx", ".nsys-rep")
