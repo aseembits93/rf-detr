@@ -53,9 +53,9 @@ def main():
 
     # Models, same list as benchmark.py
     models = [
-        "classifiers/3",
-        "yolo26n-640", "yolo26s-640", "yolo26m-640", "yolo26l-640", "yolo26x-640",
-        "rfdetr-nano", "rfdetr-small", "rfdetr-medium", "rfdetr-large", "rfdetr-xlarge", "rfdetr-2xlarge",
+        #"classifiers/3",
+        #"yolo26n-640", "yolo26s-640", "yolo26m-640", "yolo26l-640", "yolo26x-640",
+        "rfdetr-nano",# "rfdetr-small", "rfdetr-medium", "rfdetr-large", "rfdetr-xlarge", "rfdetr-2xlarge",
     ]
 
     # Download the test image once
