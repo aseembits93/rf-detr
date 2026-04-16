@@ -133,6 +133,9 @@ docs = [
     "mkdocs-git-committers-plugin-2>=2.4.1",
     "mkdocs-git-revision-date-localized-plugin>=1.2.4"
 ]
+dev = [
+    "memray>=1.19.3",
+]
 
 
 [project.urls]
